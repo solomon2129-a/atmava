@@ -7,22 +7,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getOrCreateConversation, sendMessage, subscribeMessages } from "@/lib/firestore";
 import type { Message } from "@/types";
 
-function TypingIndicator() {
-  return (
-    <div className="flex items-center gap-1.5 px-4 py-3 rounded-2xl rounded-bl-sm w-fit" style={{ background: "#E8E1D6" }}>
-      {[0, 1, 2].map(i => (
-        <motion.div key={i} className="w-1.5 h-1.5 rounded-full" style={{ background: "#7A7771" }} animate={{ y: [0, -4, 0] }} transition={{ duration: 0.8, repeat: Infinity, delay: i * 0.15 }} />
-      ))}
-    </div>
-  );
-}
 
 export function Messages() {
   const { user, userProfile } = useAuth();
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState("");
   const [convId, setConvId] = useState<string | null>(null);
-  const [typing, setTyping] = useState(false);
   const [loading, setLoading] = useState(true);
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -51,29 +41,13 @@ export function Messages() {
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, typing]);
+  }, [messages]);
 
   const send = async () => {
     if (!input.trim() || !user || !convId || !userProfile) return;
     const text = input.trim();
     setInput("");
     await sendMessage(convId, user.uid, userProfile.name, text);
-
-    // Simulated mentor reply (in production this would be a Cloud Function or real mentor)
-    setTyping(true);
-    await new Promise(r => setTimeout(r, 1800 + Math.random() * 1200));
-    setTyping(false);
-    if (mentorId) {
-      const replies = [
-        "Sit with that. Let it settle.",
-        "Yes. That's the practice.",
-        "Notice the noticing — that awareness is what we're cultivating.",
-        "Good. Keep returning.",
-        "The silence between thoughts is where the real work happens.",
-      ];
-      const reply = replies[Math.floor(Math.random() * replies.length)];
-      await sendMessage(convId, mentorId, mentorName, reply);
-    }
   };
 
   if (loading) {
@@ -88,7 +62,7 @@ export function Messages() {
     return (
       <div className="space-y-6">
         <motion.h2 className="text-2xl" style={{ fontFamily: "'Cormorant Garamond', serif", color: "#2C2B29", fontWeight: 400 }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>Messages</motion.h2>
-        <div className="p-12 rounded-2xl text-center" style={{ background: "#E8E1D6", border: "1px solid #D4CCBF" }}>
+        <div className="p-6 md:p-12 rounded-2xl text-center" style={{ background: "#E8E1D6", border: "1px solid #D4CCBF" }}>
           <p style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "1.4rem", color: "#2C2B29" }}>No mentor assigned yet</p>
           <p className="mt-2 text-sm" style={{ color: "#7A7771" }}>You'll be connected with a mentor when you enroll in a program.</p>
         </div>
@@ -99,7 +73,7 @@ export function Messages() {
   return (
     <div className="space-y-4">
       <motion.h2 className="text-2xl" style={{ fontFamily: "'Cormorant Garamond', serif", color: "#2C2B29", fontWeight: 400 }} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }}>Messages</motion.h2>
-      <motion.div className="rounded-2xl overflow-hidden flex flex-col" style={{ background: "#F6F4EF", border: "1px solid #D4CCBF", height: "520px" }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+      <motion.div className="rounded-2xl overflow-hidden flex flex-col" style={{ background: "#F6F4EF", border: "1px solid #D4CCBF", height: "min(520px, calc(100vh - 220px))", minHeight: "360px" }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
         {/* Header */}
         <div className="px-6 py-4 flex items-center gap-3" style={{ borderBottom: "1px solid #D4CCBF", background: "#E8E1D6" }}>
           <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs" style={{ background: "#5C6B57", color: "#F6F4EF" }}>
@@ -135,11 +109,6 @@ export function Messages() {
               </motion.div>
             ))}
           </AnimatePresence>
-          {typing && (
-            <motion.div className="flex justify-start" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-              <TypingIndicator />
-            </motion.div>
-          )}
           <div ref={bottomRef} />
         </div>
 

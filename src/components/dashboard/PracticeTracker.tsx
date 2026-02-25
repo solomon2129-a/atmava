@@ -129,20 +129,36 @@ export function PracticeTracker() {
         )}
       </motion.div>
 
-      {/* XP bar */}
-      <motion.div className="p-6 rounded-2xl" style={{ background: "#F6F4EF", border: "1px solid #D4CCBF" }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
-        <div className="flex items-center justify-between mb-3">
-          <p className="text-xs tracking-widest uppercase" style={{ color: "#5C6B57" }}>Total XP</p>
-          <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "1.4rem", color: "#2C2B29" }}>{(userProfile?.xp ?? 0).toLocaleString()} XP</span>
-        </div>
-        <div className="h-1.5 rounded-full" style={{ background: "#E8E1D6" }}>
-          <motion.div className="h-full rounded-full" style={{ background: "linear-gradient(90deg, #5C6B57, #7A8C74)" }} initial={{ width: "0%" }} animate={{ width: `${Math.min(((userProfile?.xp ?? 0) / 2500) * 100, 100)}%` }} transition={{ duration: 1.5, delay: 0.5, ease: [0.25, 0.1, 0.25, 1] }} />
-        </div>
-        <div className="flex justify-between text-xs mt-2" style={{ color: "#7A7771" }}>
-          <span>{userProfile?.level}</span>
-          <span>{Math.max(0, 2500 - (userProfile?.xp ?? 0))} XP to next level</span>
-        </div>
-      </motion.div>
+      {/* XP bar — correct per-level thresholds */}
+      {(() => {
+        const xp = userProfile?.xp ?? 0;
+        const LEVELS = [
+          { name: "Beginner",     min: 0,    max: 300  },
+          { name: "Seeker",       min: 300,  max: 1000 },
+          { name: "Practitioner", min: 1000, max: 2500 },
+          { name: "Embodied",     min: 2500, max: 5000 },
+          { name: "Integrated",   min: 5000, max: 5000 },
+        ];
+        const curr = LEVELS.find(l => xp < l.max) ?? LEVELS[LEVELS.length - 1];
+        const isMax = curr.name === "Integrated";
+        const pct = isMax ? 100 : Math.round(((xp - curr.min) / (curr.max - curr.min)) * 100);
+        const nextName = LEVELS[LEVELS.indexOf(curr) + 1]?.name;
+        return (
+          <motion.div className="p-6 rounded-2xl" style={{ background: "#F6F4EF", border: "1px solid #D4CCBF" }} initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+            <div className="flex items-center justify-between mb-3">
+              <p className="text-xs tracking-widest uppercase" style={{ color: "#5C6B57" }}>Total XP</p>
+              <span style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "1.4rem", color: "#2C2B29" }}>{xp.toLocaleString()} XP</span>
+            </div>
+            <div className="h-1.5 rounded-full" style={{ background: "#E8E1D6" }}>
+              <motion.div className="h-full rounded-full" style={{ background: "linear-gradient(90deg, #5C6B57, #7A8C74)" }} initial={{ width: "0%" }} animate={{ width: `${pct}%` }} transition={{ duration: 1.5, delay: 0.5, ease: [0.25, 0.1, 0.25, 1] }} />
+            </div>
+            <div className="flex justify-between text-xs mt-2" style={{ color: "#7A7771" }}>
+              <span>{curr.name}</span>
+              {isMax ? <span>Maximum level ✦</span> : <span>{(curr.max - xp).toLocaleString()} XP to {nextName}</span>}
+            </div>
+          </motion.div>
+        );
+      })()}
     </div>
   );
 }

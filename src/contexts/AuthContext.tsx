@@ -1,6 +1,6 @@
 "use client";
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from "react";
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from "react";
 import {
   User,
   signInWithEmailAndPassword,
@@ -29,6 +29,8 @@ interface AuthContextType {
   signOut: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   refreshProfile: () => Promise<void>;
+  resendVerificationEmail: () => Promise<void>;
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -37,6 +39,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  // Holds the last unverified Firebase User so resendVerificationEmail works
+  // even after we sign them back out (user state becomes null).
+  const lastUnverifiedRef = useRef<User | null>(null);
 
   const loadProfile = useCallback(async (uid: string) => {
     const profile = await getUserProfile(uid);
@@ -63,7 +68,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   };
 
   const signInWithEmail = async (email: string, password: string) => {
-    await signInWithEmailAndPassword(auth, email, password);
+    const result = await signInWithEmailAndPassword(auth, email, password);
+    // Block login for unverified email/password accounts
+    if (!result.user.emailVerified) {
+      // Stash user before signing out so resendVerificationEmail can still use it
+      lastUnverifiedRef.current = result.user;
+      await firebaseSignOut(auth);
+      throw { code: "auth/email-not-verified" };
+    }
+    lastUnverifiedRef.current = null;
   };
 
   const signUpWithEmail = async (email: string, password: string, name: string) => {
@@ -76,7 +89,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       role: "user",
       photoURL: null,
     });
-    await loadProfile(cred.user.uid);
+    // Do NOT call loadProfile here — the signup page will show "check your inbox"
+    // and the user will log in after verifying (triggering onAuthStateChanged then)
   };
 
   const signInWithGoogle = async () => {
@@ -123,9 +137,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await sendPasswordResetEmail(auth, email);
   };
 
+  /** Re-send the Firebase verification email.
+   *  Works when user is signed in (verify-email page) AND after the blocked-login
+   *  sign-out (login page), because we stash the user in lastUnverifiedRef first. */
+  const resendVerificationEmail = async () => {
+    const target = user ?? lastUnverifiedRef.current;
+    if (target) await sendEmailVerification(target);
+  };
+
+  /** Reload the Firebase user to pick up latest emailVerified status.
+   *  Call this after the user clicks the link in their inbox. */
+  const refreshUser = async () => {
+    if (!user) return;
+    await user.reload();
+    const fresh = auth.currentUser;
+    setUser(fresh);
+    if (fresh?.emailVerified) await loadProfile(fresh.uid);
+  };
+
   return (
     <AuthContext.Provider
-      value={{ user, userProfile, loading, signInWithEmail, signUpWithEmail, signInWithGoogle, signInWithApple, signOut, resetPassword, refreshProfile }}
+      value={{
+        user, userProfile, loading,
+        signInWithEmail, signUpWithEmail,
+        signInWithGoogle, signInWithApple,
+        signOut, resetPassword, refreshProfile,
+        resendVerificationEmail, refreshUser,
+      }}
     >
       {children}
     </AuthContext.Provider>

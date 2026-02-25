@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Calendar, Clock, Check, Loader } from "lucide-react";
 import { useAuth } from "@/contexts/AuthContext";
-import { createBooking, getUserBookings, updateBookingStatus, getAllMentors } from "@/lib/firestore";
+import { getUserBookings, updateBookingStatus, getAllMentors } from "@/lib/firestore";
 import type { Booking, UserProfile } from "@/types";
 
 const TIME_SLOTS = ["8:00 AM", "9:00 AM", "10:00 AM", "11:00 AM", "2:00 PM", "3:00 PM", "4:00 PM", "5:00 PM", "6:00 PM"];
@@ -59,30 +59,34 @@ export function BookingPanel() {
     if (!user || !userProfile || !selectedMentor || !selectedDate || !selectedTime) return;
     setLoading(true);
     try {
-      const bookingData: Omit<Booking, "id"> = {
-        userId: user.uid,
-        userName: userProfile.name,
-        userEmail: userProfile.email,
-        mentorId: selectedMentor.uid,
-        mentorName: selectedMentor.name,
-        programId: userProfile.programId ?? "30",
-        date: selectedDate,
-        time: selectedTime,
-        meetLink: "",
-        status: "confirmed",
-        notes,
-        createdAt: new Date().toISOString(),
-        reminderSent24h: false,
-        reminderSent1h: false,
-      };
-      const id = await createBooking(bookingData);
-      const bookings2 = await getUserBookings(user.uid);
-      setBookings(bookings2);
-      const booked = bookings2.find(b => b.id === id) ?? { ...bookingData, id };
-      setNewBooking(booked as Booking);
+      // Get a fresh ID token to authenticate the server-side API route
+      const idToken = await user.getIdToken(/* forceRefresh */ false);
+
+      const res = await fetch("/api/bookings/create", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${idToken}`,
+        },
+        body: JSON.stringify({
+          mentorId: selectedMentor.uid,
+          date: selectedDate,
+          time: selectedTime,
+          notes,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? `HTTP ${res.status}`);
+      }
+
+      const booking = (await res.json()) as Booking;
+      setBookings(prev => [booking, ...prev]);
+      setNewBooking(booking);
       setSuccess(true);
       setStep(1);
-    } catch (e) { console.error(e); }
+    } catch (e) { console.error("[BookingPanel] handleBook error:", e); }
     finally { setLoading(false); }
   };
 
@@ -178,7 +182,7 @@ export function BookingPanel() {
                   <Calendar size={14} style={{ color: "#5C6B57" }} />
                   <p className="text-xs tracking-widest uppercase" style={{ color: "#5C6B57" }}>Select Date</p>
                 </div>
-                <div className="grid grid-cols-4 gap-2">
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
                   {availableDays.map(d => (
                     <motion.button key={d} className="py-2.5 px-2 rounded-xl text-xs text-center" style={{ border: `1px solid ${selectedDate === d ? "#5C6B57" : "#D4CCBF"}`, background: selectedDate === d ? "rgba(92,107,87,0.1)" : "#F6F4EF", color: selectedDate === d ? "#5C6B57" : "#7A7771" }} onClick={() => setSelectedDate(d)} whileHover={{ borderColor: "#5C6B57" }}>
                       {formatDate(d)}
@@ -260,7 +264,7 @@ export function BookingPanel() {
                   <p className="text-xs" style={{ color: "#7A7771" }}>with {b.mentorName}</p>
                 </div>
                 <div className="flex items-center gap-3">
-                  <motion.button onClick={() => updateBookingStatus(b.id, "cancelled")} className="text-xs" style={{ color: "#7A7771" }} whileHover={{ color: "#c04040" }}>Cancel</motion.button>
+                  <motion.button onClick={async () => { await updateBookingStatus(b.id, "cancelled"); setBookings(bs => bs.map(x => x.id === b.id ? { ...x, status: "cancelled" } : x)); }} className="text-xs" style={{ color: "#7A7771" }} whileHover={{ color: "#c04040" }}>Cancel</motion.button>
                   <a href={b.meetLink} target="_blank" rel="noopener noreferrer">
                     <motion.button className="text-xs tracking-widest uppercase px-4 py-2 rounded-lg" style={{ background: "#5C6B57", color: "#F6F4EF" }} whileHover={{ background: "#4A5645" }}>Join</motion.button>
                   </a>

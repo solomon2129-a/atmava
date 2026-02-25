@@ -1,10 +1,12 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect, Suspense } from "react";
 import { motion, useInView, AnimatePresence } from "framer-motion";
-import Link from "next/link";
+import { useSearchParams, useRouter } from "next/navigation";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
+import { PaymentModal } from "@/components/PaymentModal";
+import { useAuth } from "@/contexts/AuthContext";
 import { ChevronDown, Check } from "lucide-react";
 
 const programs = [
@@ -13,6 +15,7 @@ const programs = [
     title: "Foundation",
     tagline: "Begin the return to yourself",
     price: "$149",
+    priceNum: 149,
     color: "#7A8C74",
     desc: "The Foundation program is your entry point into conscious living. Over 30 days, you'll establish the core practices of stillness, breath, and self-observation — building a platform for lasting transformation.",
     milestones: [
@@ -23,7 +26,7 @@ const programs = [
     ],
     includes: [
       "30 guided audio practices",
-      "Weekly live group sessions",
+      "Daily live group sessions",
       "Daily journaling prompts",
       "XP & streak tracking",
       "Community access",
@@ -35,6 +38,7 @@ const programs = [
     title: "Deepening",
     tagline: "Move beyond the surface",
     price: "$279",
+    priceNum: 279,
     color: "#5C6B57",
     featured: true,
     desc: "For those who have tasted stillness and are ready to go deeper. The Deepening program works with conditioning, energy, and the subtle layers of consciousness — dissolving what obscures your natural clarity.",
@@ -58,6 +62,7 @@ const programs = [
     title: "Inner Mastery",
     tagline: "Embody what you truly are",
     price: "$449",
+    priceNum: 449,
     color: "#2C2B29",
     desc: "The complete Atmava immersion. Three months of structured transformation across all layers — mind, body, energy, and spirit. By the end, stillness is not something you find in meditation. It's who you are.",
     milestones: [
@@ -77,7 +82,9 @@ const programs = [
   },
 ];
 
-function MilestoneMarker({ milestone, i }: { milestone: typeof programs[0]["milestones"][0]; i: number }) {
+type Program = typeof programs[0];
+
+function MilestoneMarker({ milestone, i }: { milestone: Program["milestones"][0]; i: number }) {
   const ref = useRef(null);
   const inView = useInView(ref, { once: true });
   return (
@@ -107,7 +114,7 @@ function MilestoneMarker({ milestone, i }: { milestone: typeof programs[0]["mile
   );
 }
 
-function ProgramCard({ prog, i }: { prog: typeof programs[0]; i: number }) {
+function ProgramCard({ prog, i, onEnroll, enrolled }: { prog: Program; i: number; onEnroll: (prog: Program) => void; enrolled: boolean }) {
   const [open, setOpen] = useState(i === 1);
   const ref = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
@@ -223,26 +230,25 @@ function ProgramCard({ prog, i }: { prog: typeof programs[0]; i: number }) {
                     </div>
                   </div>
 
-                  <Link href="/auth/signup">
-                    <motion.button
-                      className="w-full py-4 rounded-xl text-sm tracking-[0.14em] uppercase relative overflow-hidden"
-                      style={{
-                        background: prog.featured ? "#5C6B57" : "transparent",
-                        color: prog.featured ? "#F6F4EF" : "#5C6B57",
-                        border: `1px solid ${prog.featured ? "#5C6B57" : "#D4CCBF"}`,
-                      }}
-                      whileHover={{
-                        background: "#5C6B57",
-                        color: "#F6F4EF",
-                        borderColor: "#5C6B57",
-                        boxShadow: "0 6px 24px rgba(92,107,87,0.2)",
-                      }}
-                      whileTap={{ scale: 0.98 }}
-                      transition={{ duration: 0.25 }}
-                    >
-                      Begin {prog.title}
-                    </motion.button>
-                  </Link>
+                  <motion.button
+                    className="w-full py-4 rounded-xl text-sm tracking-[0.14em] uppercase relative overflow-hidden"
+                    style={{
+                      background: enrolled ? "#5C6B57" : prog.featured ? "#5C6B57" : "transparent",
+                      color: enrolled ? "#F6F4EF" : prog.featured ? "#F6F4EF" : "#5C6B57",
+                      border: `1px solid ${(enrolled || prog.featured) ? "#5C6B57" : "#D4CCBF"}`,
+                    }}
+                    whileHover={{
+                      background: "#5C6B57",
+                      color: "#F6F4EF",
+                      borderColor: "#5C6B57",
+                      boxShadow: "0 6px 24px rgba(92,107,87,0.2)",
+                    }}
+                    whileTap={{ scale: 0.98 }}
+                    transition={{ duration: 0.25 }}
+                    onClick={() => onEnroll(prog)}
+                  >
+                    {enrolled ? "Access Program →" : `Begin ${prog.title}`}
+                  </motion.button>
                 </div>
               </div>
             </div>
@@ -253,9 +259,46 @@ function ProgramCard({ prog, i }: { prog: typeof programs[0]; i: number }) {
   );
 }
 
-export default function ProgramsPage() {
+function ProgramsInner() {
+  const { user, userProfile } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const headerRef = useRef(null);
   const headerInView = useInView(headerRef, { once: true });
+
+  const [modal, setModal] = useState<{ open: boolean; prog: Program | null }>({ open: false, prog: null });
+
+  // Auto-open modal if ?buy=30 (or 60/90) is in URL after auth redirect
+  useEffect(() => {
+    const buyParam = searchParams.get("buy");
+    if (!buyParam || !user) return;
+    const prog = programs.find(p => p.days === buyParam);
+    if (prog) {
+      setModal({ open: true, prog });
+      // Clean the URL so refresh doesn't re-open
+      router.replace("/programs");
+    }
+  }, [searchParams, user, router]);
+
+  const isEnrolled = (prog: Program) => {
+    if (!userProfile) return false;
+    return userProfile.programId === prog.days;
+  };
+
+  const handleEnrollClick = (prog: Program) => {
+    if (!user) {
+      // Not logged in — redirect to signup with buy intent
+      router.push(`/auth/signup?program=${prog.days}&action=buy`);
+      return;
+    }
+    if (isEnrolled(prog)) {
+      // Already enrolled — go to dashboard
+      router.push("/dashboard");
+      return;
+    }
+    // Logged in, not enrolled — open payment modal
+    setModal({ open: true, prog });
+  };
 
   return (
     <main>
@@ -312,12 +355,37 @@ export default function ProgramsPage() {
       <section className="py-16 pb-32 px-6" style={{ background: "#F6F4EF" }}>
         <div className="max-w-4xl mx-auto space-y-6">
           {programs.map((p, i) => (
-            <ProgramCard key={p.days} prog={p} i={i} />
+            <ProgramCard
+              key={p.days}
+              prog={p}
+              i={i}
+              onEnroll={handleEnrollClick}
+              enrolled={isEnrolled(p)}
+            />
           ))}
         </div>
       </section>
 
       <Footer />
+
+      {/* Payment modal — rendered conditionally so it unmounts on close */}
+      {modal.open && modal.prog && (
+        <PaymentModal
+          onClose={() => setModal({ open: false, prog: null })}
+          programId={modal.prog.days}
+          programTitle={modal.prog.title}
+          durationDays={Number(modal.prog.days)}
+          price={modal.prog.priceNum}
+        />
+      )}
     </main>
+  );
+}
+
+export default function ProgramsPage() {
+  return (
+    <Suspense fallback={null}>
+      <ProgramsInner />
+    </Suspense>
   );
 }

@@ -18,6 +18,14 @@ export function AuthGuard({ children, requireAdmin = false, requireMentor = fals
   useEffect(() => {
     if (loading) return;
     if (!user) { router.replace("/auth/login"); return; }
+
+    // Block unverified email/password users from the dashboard
+    const isEmailProvider = user.providerData.some(p => p.providerId === "password");
+    if (isEmailProvider && !user.emailVerified) {
+      router.replace("/auth/verify-email");
+      return;
+    }
+
     if (requireAdmin && userProfile?.role !== "admin") { router.replace("/dashboard"); return; }
     if (requireMentor && userProfile?.role !== "mentor" && userProfile?.role !== "admin") {
       router.replace("/dashboard");
@@ -38,6 +46,11 @@ export function AuthGuard({ children, requireAdmin = false, requireMentor = fals
   }
 
   if (!user) return null;
+
+  // Prevent flash-rendering protected content for unverified email users
+  const isEmailProvider = user.providerData.some(p => p.providerId === "password");
+  if (isEmailProvider && !user.emailVerified) return null;
+
   if (requireAdmin && userProfile?.role !== "admin") return null;
 
   return <>{children}</>;

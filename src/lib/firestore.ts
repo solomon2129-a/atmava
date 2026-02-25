@@ -1,11 +1,14 @@
 import {
   doc, getDoc, setDoc, updateDoc, addDoc, deleteDoc,
   collection, query, where, orderBy, limit,
-  getDocs, onSnapshot, serverTimestamp, Timestamp,
+  getDocs, onSnapshot,
   startAfter, QueryDocumentSnapshot, DocumentData,
 } from "firebase/firestore";
 import { db } from "./firebase";
-import type { UserProfile, Booking, Message, CheckIn, Program, Resource } from "@/types";
+import type {
+  UserProfile, Booking, Message, CheckIn, Program, Resource, Payment,
+  Enrollment, Session,
+} from "@/types";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -157,8 +160,8 @@ export async function checkInToday(uid: string, userProfile: UserProfile): Promi
     streakCount: newStreak,
     xp: newXP,
     level: levelFromXP(newXP),
-    currentDay: newCurrentDay,
     badges: newBadges,
+    currentDay: newCurrentDay,
   });
 
   return { xpEarned, newStreak };
@@ -270,7 +273,7 @@ export async function seedPrograms(): Promise<void> {
       title: "30 Days — Foundation",
       duration: 30,
       description: "Ground yourself in daily practice. Learn to observe the mind, establish stillness rituals, and build an unshakeable base.",
-      price: 149,
+      price: 999,
       isActive: true,
       isFree: false,
       features: ["30 guided audio practices", "Weekly live sessions", "Daily journaling prompts", "XP & streak tracking", "Community access"],
@@ -281,7 +284,7 @@ export async function seedPrograms(): Promise<void> {
       title: "60 Days — Deepening",
       duration: 60,
       description: "Move beyond the surface. Dissolve conditioning, integrate shadow work, and cultivate a living relationship with awareness.",
-      price: 279,
+      price: 2999,
       isActive: true,
       isFree: false,
       features: ["60 practices + advanced sessions", "Bi-weekly 1:1 mentorship", "Shadow work framework", "Somatic practices", "XP double gains"],
@@ -292,7 +295,7 @@ export async function seedPrograms(): Promise<void> {
       title: "90 Days — Inner Mastery",
       duration: 90,
       description: "The complete Atmava immersion. Three months of structured transformation across all layers.",
-      price: 449,
+      price: 8999,
       isActive: true,
       isFree: false,
       features: ["90 premium practices", "Weekly 1:1 mentor sessions", "Full resource library", "Lifetime community access", "Inner Mastery certification"],
@@ -322,13 +325,145 @@ export async function deleteResource(id: string): Promise<void> {
   await deleteDoc(doc(db, "resources", id));
 }
 
+// ─── Mentor helpers ───────────────────────────────────────────────────────────
+
+export async function getMentorStudents(mentorId: string): Promise<UserProfile[]> {
+  const q = query(collection(db, "users"), where("mentorId", "==", mentorId));
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => d.data() as UserProfile);
+}
+
+export async function getConversationsForUser(uid: string) {
+  const q = query(
+    collection(db, "conversations"),
+    where("participants", "array-contains", uid),
+    orderBy("lastMessageAt", "desc")
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+// ─── Enrollments ─────────────────────────────────────────────────────────────
+
+/** Returns the user's active enrollment, or null if none/expired.
+ *  Filters endDate in JS (YYYY-MM-DD comparison) to avoid composite index requirement. */
+export async function getActiveEnrollment(userId: string): Promise<Enrollment | null> {
+  const today = new Date().toISOString().split("T")[0]; // YYYY-MM-DD
+  const q = query(
+    collection(db, "enrollments"),
+    where("userId", "==", userId),
+    where("status", "==", "active")
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  // Filter in JS: endDate must be today or in the future
+  const active = snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as Enrollment))
+    .find(e => e.endDate >= today);
+  return active ?? null;
+}
+
+/** Returns the enrollment for a specific program (regardless of expiry). */
+export async function getUserEnrollmentForProgram(
+  userId: string,
+  programId: string
+): Promise<Enrollment | null> {
+  const q = query(
+    collection(db, "enrollments"),
+    where("userId", "==", userId),
+    where("programId", "==", programId)
+  );
+  const snap = await getDocs(q);
+  if (snap.empty) return null;
+  return { id: snap.docs[0].id, ...snap.docs[0].data() } as Enrollment;
+}
+
+/** Admin — fetches recent enrollments ordered by date. */
+export async function getEnrollmentsAdmin(limitCount = 100): Promise<Enrollment[]> {
+  const q = query(
+    collection(db, "enrollments"),
+    orderBy("createdAt", "desc"),
+    limit(limitCount)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Enrollment));
+}
+
+/** Admin — deactivate (revoke) an enrollment. */
+export async function deactivateEnrollment(enrollmentId: string): Promise<void> {
+  await updateDoc(doc(db, "enrollments", enrollmentId), { status: "expired" });
+}
+
+/** Admin — extend an enrollment's end date and re-activate if expired. */
+export async function extendEnrollment(enrollmentId: string, newEndDate: string): Promise<void> {
+  await updateDoc(doc(db, "enrollments", enrollmentId), {
+    endDate: newEndDate,
+    status: "active",
+  });
+}
+
+// ─── Payments ─────────────────────────────────────────────────────────────────
+
+/** Admin — fetches recent payments ordered by date. */
+export async function getPaymentsAdmin(limitCount = 100): Promise<Payment[]> {
+  const q = query(
+    collection(db, "payments"),
+    orderBy("createdAt", "desc"),
+    limit(limitCount)
+  );
+  const snap = await getDocs(q);
+  return snap.docs.map(d => ({ id: d.id, ...d.data() } as Payment));
+}
+
+// ─── Sessions ─────────────────────────────────────────────────────────────────
+
+/** Returns upcoming sessions for a program (today onwards), sorted in JS to avoid composite index. */
+export async function getUpcomingSessionsForProgram(programId: string): Promise<Session[]> {
+  const today = todayStr();
+  const q = query(
+    collection(db, "sessions"),
+    where("programId", "==", programId)
+  );
+  const snap = await getDocs(q);
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as Session))
+    .filter(s => s.date >= today)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .slice(0, 20);
+}
+
+/** Returns all sessions for a program (past + upcoming), sorted by date in JS. */
+export async function getSessionsForProgram(programId: string): Promise<Session[]> {
+  const q = query(
+    collection(db, "sessions"),
+    where("programId", "==", programId)
+  );
+  const snap = await getDocs(q);
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as Session))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
+/** Returns all sessions created by a mentor, sorted by date in JS. */
+export async function getSessionsByMentor(mentorId: string): Promise<Session[]> {
+  const q = query(
+    collection(db, "sessions"),
+    where("mentorId", "==", mentorId)
+  );
+  const snap = await getDocs(q);
+  return snap.docs
+    .map(d => ({ id: d.id, ...d.data() } as Session))
+    .sort((a, b) => a.date.localeCompare(b.date));
+}
+
 // ─── Admin Analytics ─────────────────────────────────────────────────────────
 
 export async function getAdminStats() {
-  const [usersSnap, bookingsSnap, checkInsSnap] = await Promise.all([
+  const [usersSnap, bookingsSnap, checkInsSnap, enrollmentsSnap] = await Promise.all([
     getDocs(collection(db, "users")),
     getDocs(collection(db, "bookings")),
     getDocs(collection(db, "checkIns")),
+    getDocs(query(collection(db, "enrollments"), where("status", "==", "active"))),
   ]);
 
   const users = usersSnap.docs.map((d) => d.data() as UserProfile);
@@ -343,20 +478,14 @@ export async function getAdminStats() {
   const programCounts: Record<string, number> = { "30": 0, "60": 0, "90": 0 };
   users.forEach((u) => { if (u.programId) programCounts[u.programId] = (programCounts[u.programId] ?? 0) + 1; });
   const completedSessions = bookings.filter((b) => b.status === "completed").length;
-  const revenue = bookings
-    .filter((b) => b.status !== "cancelled")
-    .reduce((a, b) => {
-      const prices: Record<string, number> = { "30": 149, "60": 279, "90": 449 };
-      return a + (prices[b.programId] ?? 0);
-    }, 0);
 
   return {
     totalUsers: users.length,
     activeUsers,
+    activeEnrollments: enrollmentsSnap.size,
     totalCheckIns: checkInsSnap.size,
     completedSessions,
     totalXP,
-    revenue,
     programCounts,
     recentUsers: users.slice(0, 5),
     recentBookings: bookings.slice(0, 5),

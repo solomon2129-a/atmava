@@ -54,9 +54,6 @@ h1, h2, h3, .serif {
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--accent); }
 
-@media (min-width: 768px) {
-  * { cursor: none !important; }
-}
 
 ::selection { background-color: var(--accent); color: #F6F4EF; }
 :focus-visible { outline: 1.5px solid var(--accent); outline-offset: 3px; border-radius: 4px; }

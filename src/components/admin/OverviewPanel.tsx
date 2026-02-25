@@ -7,10 +7,10 @@ import { getAdminStats } from "@/lib/firestore";
 interface Stats {
   totalUsers: number;
   activeUsers: number;
+  activeEnrollments: number;
   totalCheckIns: number;
   completedSessions: number;
   totalXP: number;
-  revenue: number;
   programCounts: Record<string, number>;
   recentUsers: Array<{ name: string; email: string; level: string; createdAt: string }>;
   recentBookings: Array<{ userName: string; mentorName: string; date: string; status: string }>;
@@ -25,12 +25,12 @@ export function OverviewPanel() {
   }, []);
 
   const statCards = stats ? [
-    { label: "Total Users", value: stats.totalUsers.toString(), sub: "registered accounts" },
-    { label: "Active (7d)", value: stats.activeUsers.toString(), sub: "checked in recently" },
-    { label: "Check-Ins", value: stats.totalCheckIns.toString(), sub: "total practices" },
-    { label: "Sessions Done", value: stats.completedSessions.toString(), sub: "completed" },
-    { label: "Total XP", value: (stats.totalXP / 1000).toFixed(1) + "k", sub: "across all users" },
-    { label: "Revenue", value: "$" + stats.revenue.toLocaleString(), sub: "all time" },
+    { label: "Total Users",       value: stats.totalUsers.toString(),                     sub: "registered accounts" },
+    { label: "Active (7d)",       value: stats.activeUsers.toString(),                    sub: "checked in recently" },
+    { label: "Enrolled",          value: stats.activeEnrollments.toString(),              sub: "active enrollments" },
+    { label: "Check-Ins",         value: stats.totalCheckIns.toString(),                 sub: "total practices" },
+    { label: "Sessions Done",     value: stats.completedSessions.toString(),              sub: "completed bookings" },
+    { label: "Total XP",          value: (stats.totalXP / 1000).toFixed(1) + "k",       sub: "across all users" },
   ] : [];
 
   return (

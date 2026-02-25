@@ -1,20 +1,22 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, Suspense } from "react";
 import { motion, useInView, AnimatePresence } from "framer-motion";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
+import { useAuth } from "@/contexts/AuthContext";
 import { getPrograms } from "@/lib/firestore";
+import { PaymentModal } from "@/components/PaymentModal";
 import type { Program } from "@/types";
 
-// Fallback static data in case Firestore is empty / not yet seeded
+// ── Fallback programs (shown while Firestore loads or if it fails) ────────────
 const FALLBACK_PROGRAMS: Program[] = [
   {
     id: "30",
     title: "Foundation",
     duration: 30,
-    description:
-      "Ground yourself in daily practice. Learn to observe the mind, establish stillness rituals, and build an unshakeable base for growth.",
-    price: 149,
+    description: "Ground yourself in daily practice. Learn to observe the mind, establish stillness rituals, and build an unshakeable base for growth.",
+    price: 999,
     isActive: true,
     isFree: false,
     features: ["30 guided audio practices", "Weekly live sessions", "Daily journaling prompts", "XP & streak tracking", "Community access"],
@@ -24,9 +26,8 @@ const FALLBACK_PROGRAMS: Program[] = [
     id: "60",
     title: "Deepening",
     duration: 60,
-    description:
-      "Move beyond the surface. Dissolve conditioning, integrate shadow work, and cultivate a living relationship with awareness.",
-    price: 279,
+    description: "Move beyond the surface. Dissolve conditioning, integrate shadow work, and cultivate a living relationship with awareness.",
+    price: 2999,
     isActive: true,
     isFree: false,
     features: ["60 practices + advanced sessions", "Bi-weekly 1:1 mentorship", "Shadow work framework", "Somatic practices", "XP double gains"],
@@ -36,9 +37,8 @@ const FALLBACK_PROGRAMS: Program[] = [
     id: "90",
     title: "Inner Mastery",
     duration: 90,
-    description:
-      "The complete Atmava immersion. Three months of structured transformation across all layers.",
-    price: 449,
+    description: "The complete Atmava immersion. Three months of structured transformation across all layers.",
+    price: 8999,
     isActive: true,
     isFree: false,
     features: ["90 premium practices", "Weekly 1:1 mentor sessions", "Full resource library", "Lifetime community access", "Inner Mastery certification"],
@@ -52,10 +52,21 @@ const SUBTITLES: Record<string, string> = {
   "90": "Embody the stillness",
 };
 
-function ProgramCard({ prog, i, featured }: { prog: Program; i: number; featured: boolean }) {
+// ── Program card ──────────────────────────────────────────────────────────────
+interface CardProps {
+  prog: Program;
+  i: number;
+  featured: boolean;
+  userProgramId: string | null | undefined;
+  isLoggedIn: boolean;
+  onBuyClick: (prog: Program) => void;
+}
+
+function ProgramCard({ prog, i, featured, userProgramId, isLoggedIn, onBuyClick }: CardProps) {
   const [expanded, setExpanded] = useState(false);
-  const ref = useRef(null);
+  const ref    = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-60px" });
+  const isEnrolled = isLoggedIn && userProgramId === prog.id;
 
   return (
     <motion.div
@@ -65,7 +76,7 @@ function ProgramCard({ prog, i, featured }: { prog: Program; i: number; featured
       transition={{ duration: 0.9, delay: i * 0.15, ease: [0.25, 0.1, 0.25, 1] }}
       className="relative rounded-2xl overflow-hidden flex flex-col"
       style={{
-        border: featured ? "1px solid rgba(92,107,87,0.4)" : "1px solid #D4CCBF",
+        border:     featured ? "1px solid rgba(92,107,87,0.4)" : "1px solid #D4CCBF",
         background: featured ? "rgba(92,107,87,0.04)" : "rgba(246,244,239,0.7)",
         backdropFilter: "blur(12px)",
       }}
@@ -83,7 +94,9 @@ function ProgramCard({ prog, i, featured }: { prog: Program; i: number; featured
         whileHover={{ opacity: 1 }}
         transition={{ duration: 0.4 }}
         style={{
-          background: `radial-gradient(circle at 50% 0%, ${featured ? "rgba(92,107,87,0.12)" : "rgba(212,204,191,0.3)"} 0%, transparent 60%)`,
+          background: `radial-gradient(circle at 50% 0%, ${
+            featured ? "rgba(92,107,87,0.12)" : "rgba(212,204,191,0.3)"
+          } 0%, transparent 60%)`,
         }}
       />
 
@@ -120,17 +133,15 @@ function ProgramCard({ prog, i, featured }: { prog: Program; i: number; featured
           ) : (
             <div className="flex items-baseline gap-1">
               <span className="text-3xl" style={{ fontFamily: "'Cormorant Garamond', serif", color: "#2C2B29", fontWeight: 300 }}>
-                ${prog.price}
+                ₹{prog.price.toLocaleString("en-IN")}
               </span>
               <span className="text-sm" style={{ color: "#7A7771" }}>/ program</span>
             </div>
           )}
         </div>
 
-        {/* Divider */}
         <div className="w-full h-px mb-5" style={{ background: featured ? "rgba(92,107,87,0.15)" : "#E8E1D6" }} />
 
-        {/* Description */}
         <p className="text-sm leading-relaxed mb-5 flex-1" style={{ color: "#7A7771", fontWeight: 300 }}>
           {prog.description}
         </p>
@@ -163,7 +174,6 @@ function ProgramCard({ prog, i, featured }: { prog: Program; i: number; featured
           )}
         </AnimatePresence>
 
-        {/* Enrollment count */}
         {(prog.enrolledCount ?? 0) > 0 && (
           <p className="text-xs mb-4" style={{ color: featured ? "rgba(92,107,87,0.7)" : "#7A7771" }}>
             {prog.enrolledCount} people enrolled
@@ -171,9 +181,9 @@ function ProgramCard({ prog, i, featured }: { prog: Program; i: number; featured
         )}
 
         {/* CTA row */}
-        <div className="flex items-center justify-between mt-auto">
+        <div className="flex items-center justify-between mt-auto gap-4">
           <motion.button
-            className="text-xs tracking-widest uppercase"
+            className="text-xs tracking-widest uppercase shrink-0"
             style={{ color: "#7A7771" }}
             onClick={() => setExpanded(!expanded)}
             whileHover={{ color: "#2C2B29" }}
@@ -181,57 +191,116 @@ function ProgramCard({ prog, i, featured }: { prog: Program; i: number; featured
             {expanded ? "Less" : "What's included"}
           </motion.button>
 
-          <Link href={`/auth/signup?program=${prog.id}`}>
+          {isEnrolled ? (
+            <Link href="/dashboard">
+              <motion.button
+                className="px-5 py-2.5 rounded-xl text-xs tracking-widest uppercase shrink-0"
+                style={{ background: "#5C6B57", color: "#F6F4EF", border: "1px solid #5C6B57" }}
+                whileHover={{ background: "#4A5645" }}
+                whileTap={{ scale: 0.97 }}
+              >
+                Access Program →
+              </motion.button>
+            </Link>
+          ) : prog.isFree ? (
+            <Link href={`/auth/signup?program=${prog.id}`}>
+              <motion.button
+                className="px-5 py-2.5 rounded-xl text-xs tracking-widest uppercase shrink-0"
+                style={{ border: `1px solid ${featured ? "#5C6B57" : "#D4CCBF"}`, color: featured ? "#5C6B57" : "#7A7771", background: "transparent" }}
+                whileHover={{ background: featured ? "#5C6B57" : "#2C2B29", color: "#F6F4EF" }}
+                whileTap={{ scale: 0.97 }}
+              >
+                Get Started
+              </motion.button>
+            </Link>
+          ) : (
+            /* Paid → open PaymentModal (or redirect to signup if not logged in) */
             <motion.button
-              className="px-5 py-2.5 rounded-xl text-xs tracking-widest uppercase"
+              onClick={() => onBuyClick(prog)}
+              className="px-5 py-2.5 rounded-xl text-xs tracking-widest uppercase shrink-0"
               style={{
-                border: `1px solid ${featured ? "#5C6B57" : "#D4CCBF"}`,
-                color: featured ? "#5C6B57" : "#7A7771",
+                border:     `1px solid ${featured ? "#5C6B57" : "#D4CCBF"}`,
+                color:      featured ? "#5C6B57" : "#7A7771",
                 background: "transparent",
               }}
               whileHover={{
-                background: featured ? "#5C6B57" : "#2C2B29",
-                color: "#F6F4EF",
+                background:  featured ? "#5C6B57" : "#2C2B29",
+                color:       "#F6F4EF",
                 borderColor: featured ? "#5C6B57" : "#2C2B29",
-                boxShadow: "0 4px 16px rgba(92,107,87,0.15)",
+                boxShadow:   "0 4px 16px rgba(92,107,87,0.15)",
               }}
               whileTap={{ scale: 0.97 }}
               transition={{ duration: 0.25 }}
             >
-              Choose Path
+              Begin {prog.title} →
             </motion.button>
-          </Link>
+          )}
         </div>
       </div>
     </motion.div>
   );
 }
 
-export function ProgramsSection() {
-  const ref = useRef(null);
+// ── Inner section (needs useSearchParams → must be inside Suspense) ───────────
+function ProgramsSectionInner() {
+  const ref    = useRef(null);
   const inView = useInView(ref, { once: true, margin: "-80px" });
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [loading, setLoading] = useState(true);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { user, userProfile, loading: authLoading } = useAuth();
 
+  const [programs, setPrograms]     = useState<Program[]>([]);
+  const [loading, setLoading]       = useState(true);
+  const [buyingProg, setBuyingProg] = useState<Program | null>(null);
+
+  // Load programs from Firestore; fall back to static list on error
   useEffect(() => {
     getPrograms()
-      .then((data) => {
-        // Filter only active, sort by duration
+      .then(data => {
         const active = data.filter(p => p.isActive).sort((a, b) => Number(a.id) - Number(b.id));
         setPrograms(active.length >= 3 ? active : FALLBACK_PROGRAMS);
       })
-      .catch(() => {
-        // Firestore unavailable → use fallback (public homepage shouldn't break)
-        setPrograms(FALLBACK_PROGRAMS);
-      })
+      .catch(() => setPrograms(FALLBACK_PROGRAMS))
       .finally(() => setLoading(false));
   }, []);
 
+  // ── Auto-open PaymentModal from ?buy=<programId> ──────────────────────────
+  // Flow: user clicks "Begin X →" while logged out → /auth/signup?program=X&action=buy
+  //       → signs up / signs in → redirected to /?buy=X → this effect fires
+  const buyParam = searchParams.get("buy") ?? "";
+
+  useEffect(() => {
+    if (!buyParam)    return;  // no ?buy param
+    if (authLoading)  return;  // auth not resolved yet
+    if (!user)        return;  // user not signed in (shouldn't reach here)
+    if (loading)      return;  // programs not fetched yet
+    if (buyingProg)   return;  // modal already open
+
+    const allProgs = programs.length > 0 ? programs : FALLBACK_PROGRAMS;
+    const match    = allProgs.find(p => p.id === buyParam);
+    if (match) {
+      setBuyingProg(match);
+      // Remove ?buy from URL so refresh doesn't reopen the modal
+      router.replace("/#programs", { scroll: false });
+    }
+  }, [buyParam, authLoading, user, loading, programs, buyingProg, router]);
+
   const displayPrograms = programs.length > 0 ? programs : FALLBACK_PROGRAMS;
 
+  const handleBuyClick = (prog: Program) => {
+    if (!user) {
+      // Not signed in → go to signup with ?program + ?action=buy
+      router.push(`/auth/signup?program=${prog.id}&action=buy`);
+      return;
+    }
+    setBuyingProg(prog);
+  };
+
   return (
-    <section className="py-32 px-6" style={{ background: "#F6F4EF" }}>
+    <section id="programs" className="py-24 md:py-32 px-6" style={{ background: "#F6F4EF" }}>
       <div className="max-w-5xl mx-auto">
+
+        {/* Header */}
         <div className="text-center mb-16" ref={ref}>
           <motion.p
             className="text-xs tracking-[0.28em] uppercase mb-4"
@@ -243,12 +312,7 @@ export function ProgramsSection() {
           </motion.p>
           <motion.h2
             className="leading-tight"
-            style={{
-              fontFamily: "'Cormorant Garamond', serif",
-              fontSize: "clamp(2.4rem, 5vw, 4rem)",
-              fontWeight: 300,
-              color: "#2C2B29",
-            }}
+            style={{ fontFamily: "'Cormorant Garamond', serif", fontSize: "clamp(2.4rem, 5vw, 4rem)", fontWeight: 300, color: "#2C2B29" }}
             initial={{ opacity: 0, y: 20 }}
             animate={inView ? { opacity: 1, y: 0 } : {}}
             transition={{ duration: 0.8, delay: 0.1 }}
@@ -266,6 +330,7 @@ export function ProgramsSection() {
           </motion.p>
         </div>
 
+        {/* Cards */}
         {loading ? (
           <div className="flex justify-center py-16">
             <motion.div
@@ -278,11 +343,52 @@ export function ProgramsSection() {
         ) : (
           <div className="grid md:grid-cols-3 gap-6">
             {displayPrograms.map((p, i) => (
-              <ProgramCard key={p.id} prog={p} i={i} featured={p.id === "60"} />
+              <ProgramCard
+                key={p.id}
+                prog={p}
+                i={i}
+                featured={p.id === "60"}
+                userProgramId={userProfile?.programId}
+                isLoggedIn={!!user}
+                onBuyClick={handleBuyClick}
+              />
             ))}
           </div>
         )}
       </div>
+
+      {/* PaymentModal — rendered at root level so backdrop covers full page */}
+      <AnimatePresence>
+        {buyingProg && (
+          <PaymentModal
+            programId={buyingProg.id}
+            programTitle={buyingProg.title}
+            durationDays={buyingProg.duration}
+            price={buyingProg.price}
+            onClose={() => setBuyingProg(null)}
+          />
+        )}
+      </AnimatePresence>
     </section>
+  );
+}
+
+// ── Public export — wraps inner in Suspense for useSearchParams ───────────────
+export function ProgramsSection() {
+  return (
+    <Suspense
+      fallback={
+        <section className="py-32 flex justify-center" style={{ background: "#F6F4EF" }}>
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1.5, repeat: Infinity, ease: "linear" }}
+            className="w-7 h-7 rounded-full border-2 border-t-transparent"
+            style={{ borderColor: "#5C6B57" }}
+          />
+        </section>
+      }
+    >
+      <ProgramsSectionInner />
+    </Suspense>
   );
 }

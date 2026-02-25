@@ -36,6 +36,7 @@ export interface Booking {
   date: string;       // YYYY-MM-DD
   time: string;
   meetLink: string;
+  googleEventId?: string;  // optional, legacy only
   status: BookingStatus;
   notes: string;
   createdAt: string;
@@ -90,4 +91,53 @@ export interface Resource {
   programId: string;
   size: string;
   addedAt: string;
+}
+
+export type PaymentStatus    = "created" | "paid" | "failed";
+export type EnrollmentStatus = "active" | "expired";
+
+export interface Payment {
+  id: string;
+  userId: string;
+  programId: string;
+  /** Razorpay order ID — used to correlate create-order → verify */
+  razorpayOrderId: string;
+  /** Populated after successful payment */
+  razorpayPaymentId?: string;
+  /** Amount in paise (INR × 100) */
+  amount: number;
+  status: PaymentStatus;
+  /** Which environment the payment was captured in */
+  mode: "test" | "live";
+  createdAt: string;
+}
+
+/** Unified enrollment — covers both payment-created and admin-granted access */
+export interface Enrollment {
+  id: string;
+  userId: string;
+  programId: string;
+  /** Razorpay payment doc ID. null = admin-granted access */
+  paymentId: string | null;
+  status: EnrollmentStatus;
+  /** ISO date string — when access begins */
+  startDate: string;
+  /** ISO date string — when access expires (startDate + durationDays) */
+  endDate: string;
+  createdAt: string;
+  grantedByAdmin: boolean;
+}
+
+/** A live session created by a mentor for a program */
+export interface Session {
+  id: string;
+  programId: string;
+  mentorId: string;
+  mentorName: string;
+  title: string;
+  date: string;       // YYYY-MM-DD
+  startTime: string;  // HH:MM
+  endTime: string;    // HH:MM
+  meetLink: string;
+  createdAt: string;
 }

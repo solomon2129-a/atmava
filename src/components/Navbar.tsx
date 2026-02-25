@@ -23,7 +23,7 @@ export function Navbar() {
 
   const bgOpacity = useTransform(scrollY, [0, 80], [0, 1]);
 
-  const isDashboard = pathname.startsWith("/dashboard") || pathname.startsWith("/admin");
+  const isDashboard = pathname.startsWith("/dashboard") || pathname.startsWith("/admin") || pathname.startsWith("/mentor");
   if (isDashboard) return null;
 
   const handleSignOut = async () => {
@@ -109,11 +109,11 @@ export function Navbar() {
                       </div>
                     </Link>
                     {(userProfile.role === "admin" || userProfile.role === "mentor") && (
-                      <Link href="/admin" onClick={() => setProfileOpen(false)}>
+                      <Link href={userProfile.role === "admin" ? "/admin" : "/mentor"} onClick={() => setProfileOpen(false)}>
                         <div className="flex items-center gap-3 px-4 py-3 hover:bg-[#E8E1D6] transition-colors">
                           <Shield size={14} style={{ color: "#5C6B57" }} />
                           <span className="text-sm" style={{ color: "#2C2B29" }}>
-                            {userProfile.role === "admin" ? "Admin Panel" : "Mentor Panel"}
+                            {userProfile.role === "admin" ? "Admin Panel" : "Mentor Portal"}
                           </span>
                         </div>
                       </Link>
